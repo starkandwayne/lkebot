@@ -1,0 +1,52 @@
+#!/bin/bash
+set -eu
+#exec >> /tmp/cleanup.log 2>&1
+
+kc=`mktemp /tmp/kubeconfig.XXXXXXXX`
+cat > $kc <<EOF
+$KUBECONFIG
+EOF
+export KUBECONFIG=$kc
+
+# clear out load balancer services
+for svc in $(kubectl get -A svc 2>/dev/null | awk '/LoadBalancer/ {print $1 "/" $2}'); do
+	echo "tearing down svc $svc..."
+	ns=${svc%%/*}
+	name=${svc##*/}
+	kubectl delete --wait=false --ignore-not-found -n ${ns} svc/${name}
+done
+
+# clear out non-kube namespaces
+for ns in $(kubectl get ns --no-headers 2>/dev/null | awk '!/^(default |kube-)/ { print $1 }'); do
+	echo "tearing down ns $ns..."
+	kubectl delete --wait=false --ignore-not-found ns/$ns
+done
+
+# clear out default namespace
+for x in deploy statefulset daemonset job cronjob; do
+	kubectl delete --wait=false --ignore-not-found -n default $x --all >/dev/null 2>&1
+done
+
+# clear out unbound persistent volumes
+for pv in $(kubectl get -A pv --no-headers 2>/dev/null | awk '!/Bound/ {print $1}'); do
+	echo "tearing down pv $pv..."
+	kubectl delete --wait=false --ignore-not-found pv/${pv}
+done
+
+# check everything
+rc=0
+if kubectl get svc -A --no-headers 2>/dev/null | grep -q LoadBalancer; then
+	rc=1
+	echo "found load balancer services!"
+	kubectl get svc -A
+	echo
+fi
+if kubectl get pv -A --no-headers 2>/dev/null | grep -q .; then
+	rc=1
+	echo "found pvs!"
+	kubectl get pv -A
+	echo
+fi
+
+echo "exiting $rc..."
+exit $rc

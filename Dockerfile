@@ -6,4 +6,5 @@ RUN CGO_ENABLED=no go build -o /lkebot .
 
 FROM alpine:3.11
 COPY --from=builder /lkebot /lkebot
+ADD cleanup /usr/bin/cleanup
 CMD ["/lkebot"]

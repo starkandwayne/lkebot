@@ -5,11 +5,20 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/http"
+	"os/exec"
 	"regexp"
+	"syscall"
 	"time"
 
 	"github.com/linode/linodego"
 	"golang.org/x/oauth2"
+)
+
+type Status int
+const (
+	Live Status = iota
+	Terminating
+	Gone
 )
 
 type Cluster struct {
@@ -22,6 +31,8 @@ type Cluster struct {
 
 	CreatedAt time.Time
 	ExpiresAt time.Time
+
+	Status Status
 
 	seen bool
 }
@@ -94,6 +105,7 @@ func (c *Connection) Count() int {
 func (c *Connection) add(cluster linodego.LKECluster, life time.Duration) *Cluster {
 	existing := &Cluster{
 		ID:     cluster.ID,
+		Status: Live,
 		Name:   cluster.Label,
 		Region: cluster.Region,
 		/* size and instance UNKNOWN at this time */
@@ -186,8 +198,44 @@ func (c *Connection) Deploy(want Deployment) (*Cluster, error) {
 	return c.add(*cluster, want.Lifetime), nil
 }
 
+func (c *Connection) Cleanup(what *Cluster) (bool, error) {
+	kc, err := c.GetKubeconfig(what)
+	if err != nil {
+		return false, err
+	}
+
+	cmd := exec.Command("cleanup")
+	cmd.Env = append(cmd.Env, fmt.Sprintf("KUBECONFIG=%s", kc))
+
+	if _, err := cmd.CombinedOutput(); err != nil {
+		if err, ok := err.(*exec.ExitError); ok {
+			if status, ok := err.Sys().(syscall.WaitStatus); ok {
+				if status == 1 {
+					return false, nil
+				}
+				return false, fmt.Errorf("cleanup script exited %d", status.ExitStatus())
+			}
+			return false, fmt.Errorf("unable to determine status of cleanup efforts: %s", err)
+		}
+		return false, err
+	}
+
+	return true, nil
+}
+
 func (c *Connection) Teardown(what *Cluster) error {
-	return c.api.DeleteLKECluster(context.TODO(), what.ID)
+	what.Status = Terminating
+	clean, err := c.Cleanup(what)
+	if err != nil {
+		return err
+	}
+
+	if clean {
+		what.Status = Gone
+		return c.api.DeleteLKECluster(context.TODO(), what.ID)
+	}
+
+	return nil
 }
 
 func (c *Connection) GetKubeconfig(what *Cluster) (string, error) {
@@ -216,7 +264,9 @@ func (c *Connection) Sweep() []string {
 	deadline := time.Now()
 	for _, cluster := range c.clusters {
 		if cluster.ExpiresAt.Before(deadline) {
-			cleaned = append(cleaned, cluster.Name)
+			if cluster.Status == Live {
+				cleaned = append(cleaned, cluster.Name)
+			}
 			go c.Teardown(cluster)
 		}
 	}
