@@ -120,6 +120,18 @@ func main() {
 		fmt.Printf("NOT sweeping expired clusters...\n")
 	}
 
+	// prime the cluster list
+	clusters, err := c.List()
+	if err != nil {
+		fmt.Printf("unable to list current LKE clusters: %s\n", err)
+	} else {
+		fmt.Printf("found %d cluster(s):\n", len(clusters))
+		for _, cluster := range clusters {
+			fmt.Printf("%s\n", cluster)
+		}
+	}
+
+	fmt.Printf("awaiting slack messages...\n")
 	for {
 		m, err := getMessage(ws)
 		if err != nil {
@@ -299,8 +311,13 @@ func main() {
 						m.Text = fmt.Sprintf("i was not able to find the cluster *%s*\n", args[0])
 
 					} else {
-						c.Teardown(cluster)
-						m.Text = fmt.Sprintf("ok.  tearing down *%s*\n", cluster.Name)
+						err := c.Teardown(cluster)
+						if err != nil {
+							m.Text = fmt.Sprintf("oops: %s\n", err)
+
+						} else {
+							m.Text = fmt.Sprintf("ok.  tearing down *%s*\n", cluster.Name)
+						}
 					}
 				}
 				Send(ws, m)

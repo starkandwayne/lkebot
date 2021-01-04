@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os/exec"
 	"regexp"
-	"syscall"
 	"time"
 
 	"github.com/linode/linodego"
@@ -204,18 +203,18 @@ func (c *Connection) Cleanup(what *Cluster) (bool, error) {
 		return false, err
 	}
 
-	cmd := exec.Command("cleanup")
+	cmd := exec.Command("/usr/bin/cleanup")
 	cmd.Env = append(cmd.Env, fmt.Sprintf("KUBECONFIG=%s", kc))
 
-	if _, err := cmd.CombinedOutput(); err != nil {
-		if err, ok := err.(*exec.ExitError); ok {
-			if status, ok := err.Sys().(syscall.WaitStatus); ok {
-				if status == 1 {
-					return false, nil
-				}
-				return false, fmt.Errorf("cleanup script exited %d", status.ExitStatus())
+	b, err := cmd.CombinedOutput()
+	fmt.Printf("command output:\n-----------\n%s\n------------\n", string(b))
+
+	if err != nil {
+		if status, ok := err.(*exec.ExitError); ok {
+			if status.ExitCode() == 1 {
+				return false, nil
 			}
-			return false, fmt.Errorf("unable to determine status of cleanup efforts: %s", err)
+			return false, fmt.Errorf("cleanup script exited %d", status.ExitCode())
 		}
 		return false, err
 	}

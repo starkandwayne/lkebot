@@ -1,8 +1,8 @@
 #!/bin/bash
 set -eu
-#exec >> /tmp/cleanup.log 2>&1
 
 kc=`mktemp /tmp/kubeconfig.XXXXXXXX`
+trap "rm -f $kc" INT QUIT TERM EXIT
 cat > $kc <<EOF
 $KUBECONFIG
 EOF
