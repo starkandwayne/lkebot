@@ -23,8 +23,9 @@ for ns in $(kubectl get ns --no-headers 2>/dev/null | awk '!/^(default |kube-)/ 
 done
 
 # clear out default namespace
-for x in deploy statefulset daemonset job cronjob; do
-	kubectl delete --wait=false --ignore-not-found -n default $x --all >/dev/null 2>&1
+for x in deploy statefulset daemonset job cronjob pvc; do
+	echo "deleting '$x' types in default namespace..."
+	kubectl delete --wait=false --ignore-not-found -n default $x --all
 done
 
 # clear out unbound persistent volumes
