@@ -262,7 +262,7 @@ func (c *Connection) Sweep() []string {
 	cleaned := make([]string, 0)
 	deadline := time.Now()
 	for _, cluster := range c.clusters {
-		if cluster.ExpiresAt.Before(deadline) {
+		if cluster.ExpiresAt.Before(deadline) || cluster.Status == Terminating {
 			if cluster.Status == Live {
 				cleaned = append(cleaned, cluster.Name)
 			}
